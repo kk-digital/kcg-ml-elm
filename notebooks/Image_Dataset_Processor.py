@@ -8,7 +8,7 @@ import open_clip
 import torch
 import numpy as np
 from PIL import Image
-from ImageDatasetLoader import ImageDatasetLoader
+from Image_Dataset_Loader import ImageDatasetLoader
 import hashlib
 import json 
 import fire
