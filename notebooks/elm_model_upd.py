@@ -4,13 +4,13 @@ import sys
 import os
 import itertools
 sys.path.append('./')
-sys.path.insert(0,'/content/drive/MyDrive/')
+#sys.path.insert(0,'/content/drive/MyDrive/')
+sys.path.insert(0,'/content/kcg-ml-elm/notebooks')
 import argparse
 import warnings
 import numpy as np
 from datetime import datetime
- #sys.path.insert(0, '/content/kcg-ml/image_classifier_pipeline/train/')
-from train_helper_functions import *
+from elm_training_helper_functions import *
 from sklearn import metrics
 from sklearn.metrics import classification_report, accuracy_score
 import torch
@@ -48,8 +48,7 @@ class ELMClassifier(torch.nn.Module):
         self.beta.requires_grad = True
         self.activation_hidden = nn.ReLU()
         self.activation_output = nn.Softmax(dim=1)
-   
-
+        
     def forward(self, x):
         x = x.to(self.weight.device)
         h = torch.relu(x @ self.weight + self.bias)       
@@ -104,7 +103,6 @@ class ELMClassifier(torch.nn.Module):
             torch.cuda.empty_cache()
         else:
             torch.cuda.empty_cache()
-
 
 class TrainAndEvaluate:
 
@@ -213,10 +211,10 @@ class TrainAndEvaluate:
                     class_names.append(tag)
                     # get embedding list of tag images.
                     tag_all_emb_list = [metadata_dict[hash_id]["embeddings_vector"] for hash_id in tag_to_hash_json[tag]]
-                    if len(tag_all_emb_list)<=self.test_per or len( other_all_emb_list)<=self.test_per:
+                    if len(tag_all_emb_list)<=self.n_samples_train or len( other_all_emb_list)<=self.n_samples_train:
                         continue
                     # get train test embeddings and labels.
-                    train_emb, train_labels, test_emb, test_labels , t_n , o_n ,tr_tg,tr_otr,tg_lb,otr_lb= get_train_test(tag_all_emb_list, other_all_emb_list , self.test_per)
+                    train_emb, train_labels, test_emb, test_labels , t_n , o_n ,tr_tg,tr_otr,tg_lb,otr_lb= get_train_test(tag_all_emb_list, other_all_emb_list , self.n_samples_train)
             #        print(test_emb.shape)
                #     print(len(test_labels))
                #     print(tag)
@@ -256,8 +254,8 @@ class TrainAndEvaluate:
                             folder_plots=self.save_classification_report(test_labels, predicted_labels, tag, acc, self.output_dir,n_neurons)
                             tag_predictions_list.append(tag_prob)
                             neurons_list.append(n_neurons)    
-                 
-                    self.scatter_plot(neurons_list,tag_predictions_list,tag,folder_plots) 
+                    if self.evaluate_on_test==True:
+                          self.scatter_plot(neurons_list,tag_predictions_list,tag,folder_plots) 
             end_time=time.time()
             total_time = end_time - start_time
             print("Total training time: {:.2f} seconds".format(total_time))
@@ -291,6 +289,7 @@ class TrainAndEvaluate:
                 self.convert_ndarray_to_list(v)
             elif isinstance(v, np.ndarray):
                 d[k] = v.tolist()
+             
     def result_stats(self,test_labels,predicted_labels,tag,best_neuron_count,output_dir,dict1):
             
             if test_labels is not None:
@@ -325,16 +324,15 @@ class TrainAndEvaluate:
                 with open(os.path.join(output_dir,'reports',tag)+'_'+str(best_neuron_count)+ '.json', 'w') as f:
                       json.dump(complete_dict, f,indent=4)
                 complete_dict.clear()      
-                return  acc,class_specific_accuracy   
-          
+                return  acc,class_specific_accuracy  
 
     def save_classification_report(self,test_labels, predicted_labels, tag, acc, output_dir,n_neurons):
-        
         report = classification_report(test_labels, predicted_labels, digits=4, output_dict=True)
         precision = report['weighted avg']['precision']
         recall = report['weighted avg']['recall']
         f1_score = report['weighted avg']['f1-score']
         folder_plots = os.path.join(output_dir, 'report', tag)
+        print(folder_plots)
         if not os.path.exists(folder_plots):
             os.makedirs(folder_plots, exist_ok=True)
         x_labels = ["Accuracy", "F1 Score", "Precision", "Recall"]
