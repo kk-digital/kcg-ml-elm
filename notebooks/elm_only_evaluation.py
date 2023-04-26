@@ -1,15 +1,12 @@
 import sys
 import argparse
-sys.path.insert(0, '/content/kcg-ml/image_classifier_pipeline/model_api/')
-sys.path.insert(0, '/content/kcg-ml/image_classifier_pipeline/data_loader/')
-sys.path.insert(0, '/content/kcg-ml/image_classifier_pipeline/classify/')
-sys.path.insert(0, '/content/kcg-ml/image_classifier_pipeline/train/')
 sys.path.insert(0,'/content/drive/MyDrive/elm_checkpoints')
 sys.path.insert(0,'/content/drive/MyDrive/')
+sys.path.insert(0,'/content/kcg-ml-elm/notebooks')
 #from str2bool import str2bool
 from typing import List
 from elm_model_upd import TrainAndEvaluate 
-from ImageDatasetProcessor import ImageDatasetProcessor
+from Image_Dataset_Processor import ImageDatasetProcessor
 import patoolib
 import matplotlib.pyplot as plt
 from elm_training_helper_functions import *
@@ -24,7 +21,6 @@ from sklearn.metrics import classification_report, accuracy_score
 import json
 import torch.nn.functional as F
 import os
-
 global dict1
 
 def test_data_prepare(
@@ -70,9 +66,6 @@ def test_data_prepare(
 
 
 def test_data(metadata_json,tag_to_hash_json,output_dir,checkpoint,tag):
-
-
-        
         #hidden_size =  # number of hidden neurons, you can adjust this parameter
         metadata_dict    = load_json(metadata_json)
         tag_to_hash_json = load_json(tag_to_hash_json)
@@ -125,6 +118,7 @@ def select_device():
         # Use CPU
         device = torch.device('cpu')
         print("Warning: CUDA not available, using CPU.")
+        
 def evaluation(compute_clip_features,dataset_path,metadata_json,tag_to_hash_json,output_dir,clip_model,tag,checkpoint_path,device):
     # Load datase
     torch.manual_seed(42)
@@ -156,9 +150,9 @@ def evaluation(compute_clip_features,dataset_path,metadata_json,tag_to_hash_json
     #print(predicted_labels)
     evaluate = TrainAndEvaluate(metadata_json, tag_to_hash_json, output_dir,checkpoint_path)
     acc,report=evaluate.result_stats(test_labels,predicted_labels,tag,checkpoint['hidden_size'],output_dir,dict1)
-    folder_plots=evaluate.save_classification_report(test_labels, predicted_labels, tag, acc, output_dir)
+    folder_plots=evaluate.save_classification_report(test_labels, predicted_labels, tag, acc, output_dir,checkpoint['hidden_size'])
     # Release memory
-    #evaluate.scatter_plot(checkpoint['hidden_size'],tag_prob,)
+    #evaluate.scatter_plot(checkpoint['hidden_size'],tag_prob)
     
     model.clear_memory()
     #print("Testing completed check output folder for results")
