@@ -8,8 +8,6 @@ import json
 import torch
 import random
 
-
-
 def make_dir(dir_names : Union[List[str] , str]):
     """takes a list of strings or a string and make a directory based on it.
     
@@ -39,7 +37,6 @@ def make_dir(dir_names : Union[List[str] , str]):
     os.makedirs(final_dir , exist_ok=True)
     return final_dir
 
-
 def load_json(json_file_path:str):
     """ Takes a path for json file then returns a dictionary of it.
 
@@ -59,7 +56,6 @@ def load_json(json_file_path:str):
         return None
     else:
       return None
-
 
 def get_train_test(
                     tag_all_emb_list: List, 
@@ -129,7 +125,6 @@ def get_train_test(
     # convert all of these lists into numpy arrays and returns them. 
     return np.array(train_emb_list), np.array(train_label_list), np.array(test_emb_list), np.array(test_label_list),\
            tag_n_test,other_n_test,len(train_tag_emb_list),train_samples_others,test_tag_label_list[0], test_other_label_list[0], 
-
 
 def calc_confusion_matrix(
                           test_labels , 
