@@ -94,11 +94,11 @@ def get_train_test(
     test_tag_emb_list = [tag_all_emb_list[i] for i in test_indices_tag]
     tag_n_test=len(test_tag_emb_list)
     test_emb_list.extend(test_tag_emb_list)
-    test_tag_label_list  = [0] * len(test_tag_emb_list)   # test labels for tag/class embeddings
+    test_tag_label_list  = [1] * len(test_tag_emb_list)   # test labels for tag/class embeddings
     test_label_list.extend(test_tag_label_list)
    # train_tag_emb_list   = tag_all_emb_list[tag_n_test:] if len(tag_all_emb_list[tag_n_test:]) > 0 else tag_all_emb_list # train tag/class embeddings.
     train_emb_list.extend(train_tag_emb_list)
-    train_tag_label_list = [0] * len(train_tag_emb_list)  # train labels for tag/class embeddings
+    train_tag_label_list = [1] * len(train_tag_emb_list)  # train labels for tag/class embeddings
     train_label_list.extend(train_tag_label_list)
 
     # size of the number of the test set of the tag/class 
@@ -114,12 +114,12 @@ def get_train_test(
     
   #  test_other_emb_list   = other_all_emb_list[:other_n_test]    # test other embeddings.
     test_emb_list.extend(test_other_emb_list)
-    test_other_label_list  = [1] * len(test_other_emb_list)       # test labels for other embeddings.        
+    test_other_label_list  = [0] * len(test_other_emb_list)       # test labels for other embeddings.        
     test_label_list.extend(test_other_label_list) 
   #  train_other_emb_list   = other_all_emb_list[other_n_test:] if len(other_all_emb_list[other_n_test:]) > 0 else  other_all_emb_list   # train other embeddings.
   #  train_samples_others=len(other_all_emb_list[other_n_test:]) if len(other_all_emb_list[other_n_test:])  > 0 else 1 
     train_emb_list.extend(train_other_emb_list)
-    train_tag_label_list   = [1] * len(train_other_emb_list)      # train labels for tag/class embeddings.
+    train_tag_label_list   = [0] * len(train_other_emb_list)      # train labels for tag/class embeddings.
     train_label_list.extend(train_tag_label_list)
     train_samples_others=len( train_other_emb_list)
     # convert all of these lists into numpy arrays and returns them. 
