@@ -3,6 +3,10 @@
 import sys
 import os
 import itertools
+import seaborn as sns
+from scipy.stats import gaussian_kde
+from sklearn.decomposition import PCA
+from matplotlib.colors import ListedColormap
 sys.path.append('./')
 #sys.path.insert(0,'/content/drive/MyDrive/')
 sys.path.insert(0,'/content/kcg-ml-elm/notebooks')
@@ -12,7 +16,7 @@ import numpy as np
 from datetime import datetime
 from elm_training_helper_functions import *
 from sklearn import metrics
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import classification_report, accuracy_score,brier_score_loss
 import torch
 import numpy as np
 import json
@@ -26,7 +30,7 @@ import open_clip
 from PIL import Image
 import time
 import matplotlib.pyplot as plt
-
+cmap = ListedColormap(plt.cm.Blues(np.linspace(0.2, 1, 5)))
 class ELMClassifier(torch.nn.Module):
     
     def __init__(self, input_size, hidden_size, output_size,batch_size=1, l1_weight=0.001, l1_bias=0.001, use_gpu=True):
@@ -42,6 +46,7 @@ class ELMClassifier(torch.nn.Module):
             self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")
+        self.set_random_seed()    
         self.weight = torch.randn(input_size, hidden_size, requires_grad=True, device=self.device)
         self.bias = torch.randn(hidden_size, requires_grad=True, device=self.device)
         self.beta = torch.randn(hidden_size, output_size, requires_grad=True, device=self.device)
@@ -52,8 +57,14 @@ class ELMClassifier(torch.nn.Module):
     def forward(self, x):
         x = x.to(self.weight.device)
         h = torch.relu(x @ self.weight + self.bias)       
-        y_pred = torch.softmax(h @ self.beta, dim=1)  # apply softmax to output
+      #  y_pred = torch.softmax(h @ self.beta, dim=1)  # apply softmax to output
+        y_pred = torch.sigmoid(h @ self.beta)  # apply sigmoid to output
         return y_pred
+
+    def set_random_seed(self):
+        seed = int(time.time())
+        torch.manual_seed(seed)
+        np.random.seed(seed)    
 
     def print_model_details(self,model):
           print("================ ELMClassifier Model Architecture ================")
@@ -92,11 +103,12 @@ class ELMClassifier(torch.nn.Module):
     
     def predict(self, x_test):
         y_pred = self.forward(x_test)
-        #print('yr',y_pred)
         predicted_labels = torch.argmax(y_pred, dim=1).cpu().numpy()
-        class_probs = torch.softmax(y_pred, dim=1).detach().cpu().numpy().squeeze()
-        class0_prob, class1_prob = class_probs[:, 0], class_probs[:, 1]
-        return predicted_labels,class0_prob
+      #  class_probs = torch.softmax(y_pred, dim=1).detach().cpu().numpy().squeeze()
+        pos_class_prob, neg_class_prob = y_pred[:, 1].detach().numpy(), y_pred[:, 0].detach().numpy()
+        #max_prob = np.max(class_probs, axis=1)
+        return predicted_labels, pos_class_prob
+        #return y_pred 
 
     def clear_memory(self):
         if self.use_gpu and torch.cuda.is_available():
@@ -166,7 +178,7 @@ class TrainAndEvaluate:
     '''            
     def train_test_classifier(self):
             import matplotlib.pyplot as plt
-            global class_names,best_neuron_count,device
+            global class_names,best_neuron_count,device,iteration_models 
             n_neurons=50 #default
             class_names = []
             accuracies = []
@@ -201,9 +213,15 @@ class TrainAndEvaluate:
 
                 # get embeddings from tag_emb_dict and make it reay for training the classifier 
             start_time = time.time()
-                       
+            iteration_models=32           
+          #  neuron_powers_of_2 = [2**i for i in range(1, self.n_power)]  # e.g. [2, 4, 8, 16, 32, 64, 128]
+    # Train and save ELM models with different numbers of neurons
+            neuron_powers_of_2=[800]
             for tag in tag_to_hash_json:
-                    neurons_list = []
+                    checkpoint_folder=os.path.join(self.checkpoint_path,tag)
+                    if not os.path.exists(checkpoint_folder):
+                        os.makedirs(checkpoint_folder,exist_ok=True) 
+                    
                     tag_predictions_list = []
                     # make sure that it's a pixel art class tag. 
                     if tag in ['other-training' ,'other-validation','Others']:
@@ -213,48 +231,60 @@ class TrainAndEvaluate:
                     tag_all_emb_list = [metadata_dict[hash_id]["embeddings_vector"] for hash_id in tag_to_hash_json[tag]]
                     if len(tag_all_emb_list)<=self.n_samples_train or len( other_all_emb_list)<=self.n_samples_train:
                         continue
+                    brier_scores=[]
+                    variances=[]
+                    neurons_list = []
+                    for n_neurons in neuron_powers_of_2:    
+                   
                     # get train test embeddings and labels.
-                    train_emb, train_labels, test_emb, test_labels , t_n , o_n ,tr_tg,tr_otr,tg_lb,otr_lb= get_train_test(tag_all_emb_list, other_all_emb_list , self.n_samples_train)
-            #        print(test_emb.shape)
-               #     print(len(test_labels))
-               #     print(tag)
-                    # Create test tensor
-                    x_test = torch.Tensor(test_emb)
-                    x_test = x_test.to(device)
-                #    print(x_test.shape)
-                #   print(x_train.shape)
-                    input_size =  train_emb.shape[1] # assuming the shape of the embeddings is (num_samples, embedding_size)
-                    x_train = torch.Tensor( train_emb)
-                    x_train = x_train.to(device)
-                    encoder = OneHotEncoder(sparse=False)
-                    onehot_labels = encoder.fit_transform(train_labels.reshape(-1, 1))
-                    y_train = torch.Tensor(onehot_labels) # assuming you have labels for your data
-                    y_train=  y_train.to(device) 
-                    output_size = len(set(train_labels)) # number of unique labels
-                    if  output_size !=2:
-                        raise ValueError(" output_size should be equal to 2")
-              #      print( 'output_size', output_size)
-              #      print(input_size)
-                    neuron_powers_of_2 = [2**i for i in range(1, self.n_power)]  # e.g. [2, 4, 8, 16, 32, 64, 128]
-    # Train and save ELM models with different numbers of neurons
-                    checkpoint_folder=os.path.join(self.checkpoint_path,tag)
-                    if not os.path.exists(checkpoint_folder):
-                          os.makedirs(checkpoint_folder,exist_ok=True)    
-                    for n_neurons in neuron_powers_of_2:
-                        elm = ELMClassifier(x_train.shape[1], n_neurons, len(np.unique(y_train)), x_train.shape[0],l1_weight=0.000,l1_bias=0.000, use_gpu=use_cuda)
-                        trained_elm = elm.fit(x_train, y_train, n_neurons,x_train.shape[0])
-                # Assuming your computed embeddings for the test data are stored in a numpy array called 'test_embeddings'
-                        dict_args_list = [n_neurons, tag, len(test_labels), t_n, o_n, tr_tg, tr_otr, tg_lb, otr_lb, input_size, output_size, trained_elm]
-                        dict1, checkpoint = self.create_dicts(dict_args_list)
-                      #  predicted_labels = best_model.predict(x_test)    
-                        torch.save(checkpoint, checkpoint_folder+'/'+'elm_classifier'+'_'+str(n_neurons)+'_'+tag+'.pth')
-                        if self.evaluate_on_test==True:
-                            predicted_labels,tag_prob = trained_elm.predict(x_test)
-                            acc,class_specific_accuracies=self.result_stats(test_labels,predicted_labels,tag,n_neurons,self.output_dir,dict1)
-                            folder_plots=self.save_classification_report(test_labels, predicted_labels, tag, acc, self.output_dir,n_neurons)
-                            tag_predictions_list.append(tag_prob)
-                            neurons_list.append(n_neurons)    
+                        
+
+                        train_emb, train_labels, test_emb, test_labels , t_n , o_n ,tr_tg,tr_otr,tg_lb,otr_lb= get_train_test(tag_all_emb_list, other_all_emb_list , self.n_samples_train)
+                
+                #        print(test_emb.shape)
+                  #     print(len(test_labels))
+                  #     print(tag)
+                        # Create test tensor
+                        x_test = torch.Tensor(test_emb)
+                        x_test = x_test.to(device)
+                    #    print(x_test.shape)
+                    #   print(x_train.shape)
+                        input_size =  train_emb.shape[1] # assuming the shape of the embeddings is (num_samples, embedding_size)
+                        x_train = torch.Tensor( train_emb)
+                        x_train = x_train.to(device)
+                        encoder = OneHotEncoder(sparse=False)
+                        onehot_labels = encoder.fit_transform(train_labels.reshape(-1, 1))
+                        y_train = torch.Tensor(onehot_labels) # assuming you have labels for your data
+                        y_train= y_train.to(device) 
+                    #    onehot_labels = encoder.fit_transform(test_labels.reshape(-1, 1))
+                    #    y_test= torch.Tensor(onehot_labels)
+                    #    y_test= y_test.to(device) 
+                        output_size = len(set(train_labels)) # number of unique labels
+                        if  output_size !=2:
+                            raise ValueError(" output_size should be equal to 2")
+                  #      print( 'output_size', output_size)
+                  #      print(input_size)
+                        
+                        for j in range(iteration_models):    
+                            elm = ELMClassifier(x_train.shape[1], n_neurons, len(np.unique(y_train)), x_train.shape[0],l1_weight=0.000,l1_bias=0.000, use_gpu=use_cuda)
+                            trained_elm = elm.fit(x_train, y_train, n_neurons,x_train.shape[0])
+                    # Assuming your computed embeddings for the test data are stored in a numpy array called 'test_embeddings'
+                            dict_args_list = [n_neurons, tag, len(test_labels), t_n, o_n, tr_tg, tr_otr, tg_lb, otr_lb, input_size, output_size, trained_elm]
+                            dict1, checkpoint = self.create_dicts(dict_args_list)
+                          #  predicted_labels = best_model.predict(x_test)    
+                            torch.save(checkpoint, checkpoint_folder+'/'+'elm_classifier'+'_'+str(n_neurons)+'_'+str(j)+'_'+tag+'.pth')
+                            if self.evaluate_on_test==True:
+                                predicted_labels,tag_prob = trained_elm.predict(x_test)
+                                acc,class_specific_accuracies=self.result_stats(test_labels,predicted_labels,tag,n_neurons,self.output_dir,dict1,j)
+                                folder_plots=self.save_classification_report(test_labels, predicted_labels, tag, acc, self.output_dir,n_neurons,j)
+                                tag_predictions_list.append(tag_prob)
+                                neurons_list.append(n_neurons)
+                                brier_score = brier_score_loss(test_labels,tag_prob)
+                                variance = np.var(tag_prob)
+                                brier_scores.append(brier_score)
+                                variances.append(variance)    
                     if self.evaluate_on_test==True:
+                          self.brier_variance(neurons_list,brier_scores,variances,tag,folder_plots)
                           self.scatter_plot(neurons_list,tag_predictions_list,tag,folder_plots) 
             end_time=time.time()
             total_time = end_time - start_time
@@ -266,13 +296,13 @@ class TrainAndEvaluate:
             'Model': 'ELM',
             'Number of neurons': args_list[0],
             'tag': args_list[1],
-            'Total test samples': args_list[2],
-            "tag_test_samples": args_list[3],
-            "others_test_samples": args_list[4],
-            "tag_train_samples": args_list[5],
-            "other_train_samples": args_list[6],
-            "tag_label_name": args_list[7],
-            "others_label_name": args_list[8]
+            'Total number of test samples': args_list[2],
+            "Total number of test samples in tagged_set": args_list[3],
+            "Total number of test samples in other_set": args_list[4],
+            "Total number of training samples from tagged_set": args_list[5],
+            "Total number of training samples from other_set": args_list[6],
+            "label_name_tag": args_list[7],
+            "label_name_other": args_list[8]
         }
         checkpoint = {
             'input_size': args_list[9],
@@ -290,8 +320,8 @@ class TrainAndEvaluate:
             elif isinstance(v, np.ndarray):
                 d[k] = v.tolist()
              
-    def result_stats(self,test_labels,predicted_labels,tag,best_neuron_count,output_dir,dict1):
-            
+    def result_stats(self,test_labels,predicted_labels,tag,best_neuron_count,output_dir,dict1,j):
+            global iteration_models
             if test_labels is not None:
                 acc = accuracy_score(test_labels,predicted_labels)
                 report = classification_report(test_labels,  predicted_labels,output_dict=True)        
@@ -309,7 +339,6 @@ class TrainAndEvaluate:
                 FPR = FP/(FP+TN)
         # False negative rate
                 FNR = FN/(TP+FN)
-                print(type(report))
                 class_specific_accuracy = TP / (TP + FP + FN)
                 compile_results={'Correct predictions':np.sum(np.diag(confusion_matrix)),"Accuracy":np.sum(np.diag(confusion_matrix))*100/len(test_labels), 
                 'Sensitivity':TPR,'Specificity':TNR, 'Classification report': report}
@@ -321,18 +350,19 @@ class TrainAndEvaluate:
                 self.convert_ndarray_to_list(complete_dict) 
               #   print(type( resultList))
                 #compile_results.tolist()         
-                with open(os.path.join(output_dir,'reports',tag)+'_'+str(best_neuron_count)+ '.json', 'w') as f:
+                with open(os.path.join(output_dir,'reports',tag)+'_'+str(best_neuron_count)+' '+str(j)+ '.json', 'w') as f:
                       json.dump(complete_dict, f,indent=4)
                 complete_dict.clear()      
                 return  acc,class_specific_accuracy  
 
-    def save_classification_report(self,test_labels, predicted_labels, tag, acc, output_dir,n_neurons):
+    def save_classification_report(self,test_labels, predicted_labels, tag, acc, output_dir,n_neurons,iteration_number):
+        global iteration_models 
         report = classification_report(test_labels, predicted_labels, digits=4, output_dict=True)
         precision = report['weighted avg']['precision']
         recall = report['weighted avg']['recall']
         f1_score = report['weighted avg']['f1-score']
         folder_plots = os.path.join(output_dir, 'report', tag)
-        print(folder_plots)
+        variance = np.var(predicted_labels)
         if not os.path.exists(folder_plots):
             os.makedirs(folder_plots, exist_ok=True)
         x_labels = ["Accuracy", "F1 Score", "Precision", "Recall"]
@@ -343,42 +373,81 @@ class TrainAndEvaluate:
         plt.ylim(0, 1)
         plt.xticks(x_pos, x_labels)
         plt.title('Elm model for ' + tag)
-        plt.savefig(os.path.join(folder_plots, 'performance_merics of' + ' ' + tag +'for' +str(n_neurons)+  '.png'), dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(folder_plots, 'performance_metrics of' + ' ' + tag +'for'+ ' '+str(n_neurons)+'_'+str(iteration_number)+'.png'), dpi=300, bbox_inches='tight')
         plt.clf()
+
         return folder_plots
     
     def scatter_plot(self,neurons_list,tag_predictions_list,tag,folder_plots):
-       
+        global iteration_models 
         arrays=list(tag_predictions_list)
         n_new=[]
         # create a list of n_number values
-        for i in neurons_list:
+        x_range = np.arange(iteration_models)
+        
+        for i in x_range:
             upd=[]
             for j in range(len(arrays[0])):
                 upd.append(i)
             n_new.append(upd)
         # create a scatter plot of the arrays against their corresponding n_number index
+        fig, ax = plt.subplots()
         for i, arr in enumerate(arrays):
-            plt.scatter(n_new[i], arr)
+         #   np.save('/content/drive/MyDrive/arr',arr)
+          #  np.save('/content/drive/MyDrive/new',n_new[i])
+            n_new_arr=np.array(n_new[i])
+            pca = PCA(n_components=1)
+            xy = pca.fit_transform(np.vstack([ n_new_arr, arr]).T)
+            xy = xy.squeeze()
+# Calculate the point density using gaussian_kde
+            z = gaussian_kde(xy)(xy)
+            # Sort the points by density, so that the densest points are plotted last
+            idx = z.argsort()
+            n_new_upd, arr, z = n_new_arr[idx], arr[idx], z[idx]  
+            ax.scatter(n_new_upd, arr, c=z, cmap=cmap, s=20)
+  #          ax.scatter(n_new_upd, arr, c=z, s=50)
+           # plt.scatter(n_new[i], arr,alpha=0.5)
         
+      #  plt.scatter(x_range,predicted_ )
         # set plot title and axis labels
-        plt.xlabel('Number of Neurons')
-        plt.ylabel('Predicted Probability')
-        plt.title('Different checkpoints predictions')
+      #  plt.xlabel('Number of Neurons')
+        plt.xlabel('Model number') 
+        plt.ylabel('Predicted Probability for positive class')
+       # plt.title('Different checkpoints predictions')
+        plt.title(tag+' '+'for'+' '+str(neurons_list[0])+' '+'neurons')
         # Set y-axis limits
         plt.ylim(0, 1)
+        plt.xticks(x_range,rotation=90)
       #  plt.savefig(os.path.join(folder_plots, 'Predicted Probabilities for' + ' ' + tag + '.png'), dpi=300, bbox_inches='tight')
       
-        plt.legend(list(map(str, neurons_list)),  ncol = 1,loc='center left', bbox_to_anchor=(1, 0.5))
+        #plt.legend(list(map(str, neurons_list)),  ncol = 1,loc='center left', bbox_to_anchor=(1, 0.5))
       #  plt.legend(bbox_to_anchor=(0.4, 0.8), loc="upper right")
-        plt.savefig(os.path.join(folder_plots, 'Predicted Probabilities for' + ' ' + tag + '.png'), dpi=300, bbox_inches='tight')
-
-        # plt.legend(['2', '4', '8', '16', '32', '64'])
-        # plt.legend(['128', '256', '512'])
+      #  plt.legend(list(map(str,  x_range)),  ncol = 1,loc='center left', bbox_to_anchor=(1, 0.5))
+        plt.savefig(os.path.join(folder_plots, 'Predicted Probabilities for' + ' ' + tag+str(iteration_models) + '.png'), dpi=300, bbox_inches='tight')
         # show the plot
         plt.show()
         plt.clf()
       
+    def brier_variance(self,n_neurons_list,brier_score,var,tag,folder_plots):
+          global iteration_models
+          x_range = np.arange(iteration_models)
+          fig, ax = plt.subplots()
+         # ax.plot(n_neurons_list, var, label='Variance')
+          ax.plot(x_range, brier_score, label='Brier score')
+          ax.plot(x_range, var, label='Variance')
+          #ax.plot(n_neurons_list, brier_score, label='Brier Score')
+          # Add axis labels and legend
+          if not os.path.exists(folder_plots):
+            os.makedirs(folder_plots, exist_ok=True)
+          ax.set_xlabel('Model number')
+          ax.set_ylabel('Score')
+          ax.legend()
+          plt.ylim(0, 1)
+          plt.xticks(x_range,rotation=90)
+          plt.title(tag+' '+'for'+' '+str(n_neurons_list[0])+' '+'neurons')
+          plt.savefig(os.path.join(folder_plots, 'brier score and variance' + ' ' +'for'+ tag +'.png'), dpi=300, bbox_inches='tight')
+          plt.clf()
+          
 def process_single_image(
         image: str,
         clip_model: str = 'ViT-L-14', 
