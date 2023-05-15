@@ -119,7 +119,7 @@ def select_device():
         device = torch.device('cpu')
         print("Warning: CUDA not available, using CPU.")
         
-def evaluation(compute_clip_features,dataset_path,metadata_json,tag_to_hash_json,output_dir,clip_model,tag,checkpoint_path,device):
+def evaluation(compute_clip_features,dataset_path,metadata_json,tag_to_hash_json,output_dir,clip_model,tag,checkpoint_path,device,j):
     # Load datase
     torch.manual_seed(42)
     np.random.seed(42)  
@@ -149,8 +149,8 @@ def evaluation(compute_clip_features,dataset_path,metadata_json,tag_to_hash_json
     predicted_labels,tag_prob = model.predict(data_test)
     #print(predicted_labels)
     evaluate = TrainAndEvaluate(metadata_json, tag_to_hash_json, output_dir,checkpoint_path)
-    acc,report=evaluate.result_stats(test_labels,predicted_labels,tag,checkpoint['hidden_size'],output_dir,dict1)
-    folder_plots=evaluate.save_classification_report(test_labels, predicted_labels, tag, acc, output_dir,checkpoint['hidden_size'])
+    acc,report=evaluate.result_stats(test_labels,predicted_labels,tag,checkpoint['hidden_size'],output_dir,dict1,j)
+    folder_plots=evaluate.save_classification_report(test_labels, predicted_labels, tag, acc, output_dir,checkpoint['hidden_size'],j)
     # Release memory
     #evaluate.scatter_plot(checkpoint['hidden_size'],tag_prob)
     
