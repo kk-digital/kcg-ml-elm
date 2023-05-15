@@ -285,7 +285,7 @@ class TrainAndEvaluate:
                                 variances.append(variance)    
                     if self.evaluate_on_test==True:
                           self.brier_variance(neurons_list,brier_scores,variances,tag,folder_plots)
-                          self.scatter_plot(neurons_list,tag_predictions_list,tag,folder_plots) 
+                          self.scatter_plot(neurons_list,tag_predictions_list,tag,folder_plots,iteration_models) 
             end_time=time.time()
             total_time = end_time - start_time
             print("Total training time: {:.2f} seconds".format(total_time))
@@ -378,8 +378,7 @@ class TrainAndEvaluate:
 
         return folder_plots
     
-    def scatter_plot(self,neurons_list,tag_predictions_list,tag,folder_plots):
-        global iteration_models 
+    def scatter_plot(self,neurons_list,tag_predictions_list,tag,folder_plots,iteration_models):
         arrays=list(tag_predictions_list)
         n_new=[]
         # create a list of n_number values
