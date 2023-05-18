@@ -1,7 +1,7 @@
 FROM pytorch/pytorch
 
 # Copy
-COPY . /kcg-ml-elm
+COPY .. /kcg-ml-elm
 WORKDIR /kcg-ml-elm
 
 RUN pip3 install -r ./requirements-docker.txt
